@@ -3,9 +3,16 @@
 set -e
 
 DATE_FORMAT="%a, %d %b %Y %H:%M:%S %z"
-BASEDIR=~/Maildir/personal/Notes
 PID=$$
+BASEDIR=~/Maildir/personal/Notes
 
+if [ -n "$NOTES_SH_BASEDIR" ]; then
+	BASEDIR="$NOTES_SH_BASEDIR"
+fi
+
+if [ -z "$EDITOR" ]; then
+	EDITOR=vim
+fi
 
 if [ ! -d "$BASEDIR" ]; then
 	mkdir -p "$BASEDIR"/{tmp,new,cur}
@@ -17,7 +24,7 @@ uuid()
 
     for (( N=0; N < 16; ++N ))
     do
-        B=$(( $RANDOM%255 ))
+        B=$(( RANDOM%255 ))
 
         if (( N == 6 ))
         then
@@ -25,7 +32,7 @@ uuid()
         elif (( N == 8 ))
         then
             local C='89ab'
-            printf '%c%x' ${C:$(( $RANDOM%${#C} )):1} $(( B%15 ))
+            printf '%c%x' ${C:$(( RANDOM%${#C} )):1} $(( B%15 ))
         else
             printf '%02x' $B
         fi
@@ -43,10 +50,33 @@ uuid()
     echo
 }
 
+get_headers() {
+	FILE="$1"
+	
+	FILTER="\
+		{ \
+		    if (\$0~/^$/) {exit} \
+		    print \$0 \
+		} \
+	"
+	awk "$FILTER" "$FILE"
+}
+
+get_body() {
+	FILE="$1"
+	
+	FILTER="\
+		{ \
+		    if (body==1) {print \$0}\
+		    if (\$0~/^$/) {body=1} \
+		} \
+	"
+	awk "$FILTER" "$FILE" 
+}
 get_header() {
 	FILE="$1"
 	HEADER="$2"
-	echo $(grep -m1 "^${HEADER}: " < "$FILE" | sed -n "s/^${HEADER}: \(.*\)$/\1/p")
+	grep -m1 "^${HEADER}: " < "$FILE" | sed -n "s/^${HEADER}: \(.*\)$/\1/p"
 }
 
 get_part() {
@@ -81,7 +111,7 @@ unpack_part() {
 
 	if [[ $DISPOSITION == *"attachment"* ]]; then
 		ENCODING=$(get_header "$FILE" Content-Transfer-Encoding)
-		FILENAME=$(echo $DISPOSITION | \
+		FILENAME=$(echo "$DISPOSITION" | \
 			sed -n 's/^.*filename="\{0,1\}\(.*\)"\{0,1\}$/\1/p')
 		FILTER="\
 			{ \
@@ -104,7 +134,7 @@ unpack_part() {
 		"
 		awk "$FILTER" "$FILE" >> "$DIR/note.md"
 	elif [[ $MIME_TYPE == *"multipart/mixed"* ]]; then
-		BOUNDARY=$(echo $MIME_TYPE | sed -n 's/^.*boundary="\(.*\)"$/\1/p')
+		BOUNDARY=$(echo "$MIME_TYPE" | sed -n 's/^.*boundary="\(.*\)"$/\1/p')
 		i=1
 		while true; do
 		    TMP=$(mktemp --tmpdir="$DIR")
@@ -136,7 +166,7 @@ unpack_mime() {
 	MESSAGE_ID=$(get_header "$FILE" Message-Id)
 
 	echo "Date: $DATE" > "$DIR/note.md"
-	if [ ! -z "$MESSAGE_ID" ]; then
+	if [ -n "$MESSAGE_ID" ]; then
 		echo "Message-Id: $MESSAGE_ID" >> "$DIR/note.md"
 	fi
 	echo "Subject: $SUBJECT" >> "$DIR/note.md"
@@ -149,46 +179,85 @@ unpack_mime() {
 	rm "$TMP"
 }
 
+pack_mime() {
+	DIR="$1"
+	FILE="$2"
+	{
+		echo "MIME-Version: 1.0"
+		echo "Content-Type: text/plain; charset=utf-8"
+		echo "Content-Disposition: inline"
+		cat "$DIR/note.md"
+	} >> "$FILE"
+
+}
+
 new_entry() {
-	ENTRY_FILE=$(mktemp)
+	DIR=$(mktemp -d)
+	ENTRY_FILE="$DIR/note.md"
+	ENTRY_FILE_START="$(mktemp)"
+	MIME_TIMESTAMP=$(LC_ALL="en_US.UTF-8" date "+$DATE_FORMAT")
 
-	vim -c ":set syntax=markdown" \
-		-c "1 s/^/# /" \
-		-c "norm $" \
-		"$ENTRY_FILE"
+	cat > "$ENTRY_FILE" <<- EOF
+		Date: $MIME_TIMESTAMP
+		Message-Id: <$(uuid)@notes.sh>
+		Subject: 
+	EOF
 
-	if [ -s "$ENTRY_FILE" ]; then
-		MIME_TIMESTAMP=$(LC_ALL="en_US.UTF-8" date "+$DATE_FORMAT")
+	cp "$ENTRY_FILE" "$ENTRY_FILE_START"
+
+	if [ -t 0 ]; then
+		"$EDITOR" "$ENTRY_FILE"
+	else
+		ENTRY_FILE_STDIN="$(mktemp)"
+		while read -r line ; do
+			echo "$line" >> "$ENTRY_FILE_STDIN"
+		done
+
+		HEADERS=$( echo "$(
+			get_headers "$ENTRY_FILE_STDIN"
+			get_headers "$ENTRY_FILE"
+			)" | sort -u -k1,1)
+
+		{
+			echo "$HEADERS"
+			echo ""
+			get_body "$ENTRY_FILE_STDIN"
+		} > "$ENTRY_FILE"
+	fi
+
+	if  ! cmp -s "$ENTRY_FILE" "$ENTRY_FILE_START" ; then
 		UNIX_TIMESTAMP=$(date "+%s")
 		HOSTNAME=$(hostname -s)
-		SUBJECT=$(head -1 "$ENTRY_FILE")
-		SUBJECT=${SUBJECT#"# "}
 
 		RESULT=$(mktemp)
-		echo "Date: $MIME_TIMESTAMP" >> "$RESULT"
-		echo "MIME-Version: 1.0" >> "$RESULT"
-		echo "Content-Type: text/plain; charset=utf-8" >> "$RESULT"
-		echo "Content-Disposition: inline" >> "$RESULT"
-		echo "Message-Id: <$(uuid)@notes.sh>" >> "$RESULT"
-		echo "Subject: $SUBJECT" >> "$RESULT"
-		echo "" >> "$RESULT"
-		sed "1d" < "$ENTRY_FILE" >> "$RESULT"
-
-		#cat "$RESULT"
-
+		pack_mime "$DIR" "$RESULT"
 		FILENAME="$UNIX_TIMESTAMP.${PID}_1.${HOSTNAME}:2,S"
 		mv "$RESULT" "$BASEDIR/cur/$FILENAME"
-
-		echo "done"
 	fi
 }
 
 edit_entry() {
-    unpack_mime "$1" ~/scratch/notes
+	FILENAME="$(echo "$1" | sed 's/\o037.*//' )"
+
+	DIR=$(mktemp -d)
+    unpack_mime "$FILENAME" "$DIR"
+	"$EDITOR" "$DIR/note.md"
+
+	UNIX_TIMESTAMP=$(date "+%s")
+	HOSTNAME=$(hostname -s)
+
+	RESULT=$(mktemp)
+	pack_mime "$DIR" "$RESULT"
+
+	if ! cmp -s "$RESULT" "$FILENAME"; then
+		DEST_FILENAME="$UNIX_TIMESTAMP.${PID}_1.${HOSTNAME}:2,S"
+		mv "$RESULT" "$BASEDIR/cur/$DEST_FILENAME"
+		rm "$FILENAME"
+	fi
 }
 
 list_entries() {
-	grep -m1 -r "^Subject:" "$BASEDIR" | sed -n 's/^\(.*\):Subject: \(.*\)$/\1:\2/p'
+	grep -m1 -r "^Subject:" "$BASEDIR" | sed -n 's/^\(.*\):Subject: \(.*\)$/\1\o037 \2/p'
 
 }
 
