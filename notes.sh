@@ -197,6 +197,7 @@ pack_mime() {
 }
 
 new_entry() {
+	INP="$1"
 	DIR=$(mktemp -d)
 	ENTRY_FILE="$DIR/note.md"
 	ENTRY_FILE_START="$(mktemp)"
@@ -210,25 +211,38 @@ new_entry() {
 
 	cp "$ENTRY_FILE" "$ENTRY_FILE_START"
 
-	if [ -t 0 ]; then
+	if [ -n "$INP" ] && [ ! -f "$INP" ] && [ ! -d "$INP" ]; then
+		die "File or directory doesn't exist: $INP"
+	fi
+
+	if [ -f "$INP" ]; then
+		cp "$INP" "$DIR/note.md"
+	elif [ -d "$INP" ]; then
+		if [ ! -f "$INP/note.md" ]; then
+			die "File doesn't exist: $INP/note.md"
+		fi
+		cp -n "$INP"/* "$DIR/" || true
+		cat "$INP/note.md" >> "$DIR/note.md"
+	elif [ -t 0 ]; then
 		"$EDITOR" "$ENTRY_FILE"
 	else
-		ENTRY_FILE_STDIN="$(mktemp)"
 		while read -r line ; do
-			echo "$line" >> "$ENTRY_FILE_STDIN"
+			echo "$line" >> "$ENTRY_FILE"
 		done
-
-		HEADERS=$( echo "$(
-			get_headers "$ENTRY_FILE_STDIN"
-			get_headers "$ENTRY_FILE"
-			)" | sort -u -k1,1)
-
-		{
-			echo "$HEADERS"
-			echo ""
-			get_body "$ENTRY_FILE_STDIN"
-		} > "$ENTRY_FILE"
 	fi
+	MERGED_ENTRY_FILE="$(mktemp)"
+
+	HEADERS=$( echo "$(
+		get_headers "$ENTRY_FILE"
+		)" | tac | sort -u -k1,1)
+
+	{
+		echo "$HEADERS"
+		echo ""
+		get_body "$ENTRY_FILE"
+	} > "$MERGED_ENTRY_FILE"
+
+	mv "$MERGED_ENTRY_FILE" "$ENTRY_FILE"
 
 	if  ! cmp -s "$ENTRY_FILE" "$ENTRY_FILE_START" ; then
 		UNIX_TIMESTAMP=$(date "+%s")
@@ -313,7 +327,7 @@ usage() {
 while (( "$#" )); do
   case "$1" in
     -n|--new)
-      new_entry
+      new_entry "$2"
       exit 0
       ;;
     -l|--list)
