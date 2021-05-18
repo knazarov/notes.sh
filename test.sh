@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
+BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 export BASE_DIR
 cd "$BASE_DIR"
 
