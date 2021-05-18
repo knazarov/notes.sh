@@ -18,6 +18,11 @@ if [ ! -d "$BASEDIR" ]; then
 	mkdir -p "$BASEDIR"/{tmp,new,cur}
 fi
 
+die() {
+	echo "$@" 1>&2;
+	exit 1
+}
+
 uuid()
 {
     local N B T
@@ -236,8 +241,21 @@ new_entry() {
 	fi
 }
 
+find_file_by_id() {
+	ID="$1"
+
+	FILE="$( { grep -l -r "^Message-Id: <$ID>$" "$BASEDIR" || true; } | head -1)"
+
+	if [ ! -f "$FILE" ]; then
+		die "Note with ID <$ID> not found"
+	fi
+
+	echo "$FILE"
+}
+
 edit_entry() {
-	FILENAME="$(echo "$1" | sed 's/\o037.*//' )"
+	ID="$1"
+	FILENAME="$(find_file_by_id "$ID")"
 
 	DIR=$(mktemp -d)
     unpack_mime "$FILENAME" "$DIR"
@@ -257,8 +275,34 @@ edit_entry() {
 }
 
 list_entries() {
-	grep -m1 -r "^Subject:" "$BASEDIR" | sed -n 's/^\(.*\):Subject: \(.*\)$/\1\o037 \2/p'
+	FILTER="\
+		BEGIN { \
+			message_id=0; \
+			subject=0; \
+		} \
+		match(\$0, /^Message-Id: .*$/) { \
+				if (message_id != 0) { \
+					if (subject !=0)\
+						print message_id, subject; \
+					subject = 0 \
+				};\
+				message_id = substr(\$0, 14, RLENGTH-14) \
+		} \
+		match(\$0, /^Subject: .*$/) { \
+				if (subject != 0) { \
+					if (message_id != 0)\
+						print message_id, subject; \
+					message_id = 0 \
+				}; \
+				subject = substr(\$0, 10, RLENGTH-9) \
+		} \
+		END { \
+			if (message_id != 0 && subject != 0)\
+				print message_id, subject;\
+		}\
+	"
 
+    grep -m2 -r -h "^Subject:\|^Message-Id:" "$BASEDIR" | awk "$FILTER"
 }
 
 usage() {
