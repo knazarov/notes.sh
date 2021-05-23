@@ -168,11 +168,11 @@ unpack_mime() {
 	DATE=$(get_header "$FILE" Date)
 	SUBJECT=$(get_header "$FILE" Subject)
 	MIME_TYPE=$(get_header "$FILE" Content-Type)
-	MESSAGE_ID=$(get_header "$FILE" Message-Id)
+	NOTE_ID=$(get_header "$FILE" X-Note-Id)
 
 	echo "Date: $DATE" > "$DIR/note.md"
-	if [ -n "$MESSAGE_ID" ]; then
-		echo "Message-Id: $MESSAGE_ID" >> "$DIR/note.md"
+	if [ -n "$NOTE_ID" ]; then
+		echo "X-Note-Id: $NOTE_ID" >> "$DIR/note.md"
 	fi
 	echo "Subject: $SUBJECT" >> "$DIR/note.md"
 	echo "" >> "$DIR/note.md"
@@ -205,7 +205,7 @@ new_entry() {
 
 	cat > "$ENTRY_FILE" <<- EOF
 		Date: $MIME_TIMESTAMP
-		Message-Id: <$(uuid)@notes.sh>
+		X-Note-Id: $(uuid)
 		Subject: 
 	EOF
 
@@ -258,7 +258,7 @@ new_entry() {
 find_file_by_id() {
 	ID="$1"
 
-	FILE="$( { grep -l -r "^Message-Id: <$ID>$" "$BASEDIR" || true; } | head -1)"
+	FILE="$( { grep -l -r "^X-Note-Id: $ID$" "$BASEDIR" || true; } | head -1)"
 
 	if [ ! -f "$FILE" ]; then
 		die "Note with ID <$ID> not found"
@@ -294,13 +294,13 @@ list_entries() {
 			message_id=0; \
 			subject=0; \
 		} \
-		match(\$0, /^Message-Id: .*$/) { \
+		match(\$0, /^X-Note-Id: .*$/) { \
 				if (message_id != 0) { \
 					if (subject !=0)\
 						print message_id, subject; \
 					subject = 0 \
 				};\
-				message_id = substr(\$0, 14, RLENGTH-14) \
+				message_id = substr(\$0, 12, RLENGTH-11) \
 		} \
 		match(\$0, /^Subject: .*$/) { \
 				if (subject != 0) { \
@@ -316,13 +316,73 @@ list_entries() {
 		}\
 	"
 
-    grep -m2 -r -h "^Subject:\|^Message-Id:" "$BASEDIR" | awk "$FILTER"
+    grep -m2 -r -h "^Subject:\|^X-Note-Id:" "$BASEDIR" | awk "$FILTER"
+}
+
+get_raw_graph() {
+	UUID_RE="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"	
+	FILTER="\
+		BEGIN { \
+			message_id=0; \
+			subject=0; \
+		} \
+		match(\$0, /^X-Note-Id: .*$/) { \
+				if (message_id != 0) { \
+					if (subject !=0)\
+						print \"node\", message_id, subject; \
+					subject = 0 \
+				};\
+				message_id = substr(\$0, 12, RLENGTH-11) \
+		} \
+		match(\$0, /^Subject: .*$/) { \
+				if (subject != 0) { \
+					if (message_id != 0)\
+						print \"node\", message_id, subject; \
+					message_id = 0 \
+				}; \
+				subject = substr(\$0, 10, RLENGTH-9) \
+		} \
+		match(\$0, /^note:\/\/.*$/) { \
+				link_to = substr(\$0, 8, RLENGTH-7); \
+				if (subject != 0 && message_id != 0) { \
+					print \"link\", message_id, link_to; \
+				}; \
+		} \
+		END { \
+			if (message_id != 0 && subject != 0)\
+				print \"node\", message_id, subject;\
+		}\
+	"
+	grep -E -i -o -r -h "^X-Note-Id: $UUID_RE|^Subject.*$|note://$UUID_RE" \
+		"$BASEDIR"/cur | awk "$FILTER"
+}
+
+get_graph() {
+	UUIDLEN=36
+	FILTER="\
+		BEGIN { \
+			print \"graph notes {\" \
+		} \
+		{\
+			if (\$1 == \"node\") {\
+				printf \"  \\\"%s\\\" \", \$2;\
+				printf \"[label=\\\"%s\\\"]\", substr(\$0, $UUIDLEN + 7, length(\$0) - $UUIDLEN - 5);\
+				printf \";\\n\";\
+			}\
+			if (\$1 == \"link\") {\
+				printf \"  \\\"%s\\\" -- \\\"%s\\\";\\n\", \$2, \$3;\
+			}\
+		}\
+		END { \
+			print \"}\" \
+		} \
+	"
+	get_raw_graph | sort -r | sed 's/"/\\"/g' | awk "$FILTER"
 }
 
 usage() {
-  echo "$0 {--new,--list,--edit,--help}"
+  echo "$0 {--new,--list,--edit,--graph,--help}"
 }
-
 
 while (( "$#" )); do
   case "$1" in
@@ -342,6 +402,10 @@ while (( "$#" )); do
       edit_entry "$2"
       exit 0
       ;;
+	-g|--graph)
+	  get_graph
+	  exit 0
+	  ;;
     *)
       usage
       exit 1
