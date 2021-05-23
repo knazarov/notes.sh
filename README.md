@@ -42,3 +42,7 @@ To select a note with fuzzy search and edit it:
 ```sh
 ./notes.sh -l | fzf --with-nth="2..-1" | xargs -o ./notes.sh -e
 ```
+
+## License
+
+Distributed under the terms of the BSD License
