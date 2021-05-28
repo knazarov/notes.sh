@@ -80,6 +80,16 @@ uuid()
     echo
 }
 
+gen_boundary()
+{
+	for (( N=0; N < 32; ++N ))
+	do
+		B=$(( RANDOM%255 ))
+		printf '%02x' $B
+	done
+	echo
+}
+
 yesno() {
 	PROMPT="$1"
 	DEFAULT="$2"
@@ -102,7 +112,7 @@ yesno() {
 }
 
 get_headers() {
-	FILE="$1"
+	HEADERS_FILE="$1"
 	
 	FILTER="\
 		{ \
@@ -110,11 +120,11 @@ get_headers() {
 		    print \$0 \
 		} \
 	"
-	awk "$FILTER" "$FILE"
+	awk "$FILTER" "$HEADERS_FILE"
 }
 
 get_body() {
-	FILE="$1"
+	BODY_FILE="$1"
 	
 	FILTER="\
 		{ \
@@ -122,7 +132,7 @@ get_body() {
 		    if (\$0~/^$/) {body=1} \
 		} \
 	"
-	awk "$FILTER" "$FILE" 
+	awk "$FILTER" "$BODY_FILE" 
 }
 get_header() {
 	FILE="$1"
@@ -230,16 +240,60 @@ unpack_mime() {
 	rm "$TMP"
 }
 
+pack_part() {
+	PART_FILE="$1"
+	CONTENT_TYPE="$(file -b --mime-type "$PART_FILE")"
+	echo "Content-Disposition: attachment; filename=\"$(basename "$PART_FILE")\""
+
+	if [[ "$CONTENT_TYPE" =~ "text/" ]]; then
+		echo "Content-Type: text/plain"
+		echo
+		cat "$PART_FILE"
+	else
+		echo "Content-Type: $CONTENT_TYPE"
+		echo "Content-Transfer-Encoding: base64"
+		echo
+		cat "$PART_FILE" | base64
+	fi
+}
+
 pack_mime() {
 	DIR="$1"
 	FILE="$2"
+	FILE_COUNT="$(ls "$DIR" | wc -l)"
+
+	if [[ "$FILE_COUNT" == "1" ]]; then
+		{
+			echo "MIME-Version: 1.0"
+			echo "Content-Type: text/plain; charset=utf-8"
+			echo "Content-Disposition: inline"
+			cat "$DIR/note.md"
+		} >> "$FILE"
+		return
+	fi
+
+	BOUNDARY="$(gen_boundary)"
 	{
 		echo "MIME-Version: 1.0"
+		echo "Content-Type: multipart/mixed; boundary=$BOUNDARY"
+		get_headers "$DIR/note.md"
+		echo
+		echo "--$BOUNDARY"
 		echo "Content-Type: text/plain; charset=utf-8"
 		echo "Content-Disposition: inline"
-		cat "$DIR/note.md"
+		echo
+		get_body "$DIR/note.md"
 	} >> "$FILE"
 
+
+	find "$DIR/" -type f ! -name 'note.md' | while read FN
+	do
+		{
+			echo "--$BOUNDARY"
+			pack_part "$FN"
+		} >> "$FILE"
+	done	
+	echo "--$BOUNDARY--" >> "$FILE"
 }
 
 new_entry() {

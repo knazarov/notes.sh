@@ -205,6 +205,50 @@ resume_editing() {
 	assert 'echo "$OUTPUT" | grep -o myline3' "myline3"
 }
 
+pack_multipart() {
+	mkdir "$TMP/inpdir"
+	cat > "$TMP/inpdir/note.md" <<- EOF
+		Subject: This is a header
+
+		This is a body
+	EOF
+
+	cat > "$TMP/inpdir/file.txt" <<- EOF
+		This is a text attachment
+	EOF
+
+	"$BASE_DIR/notes.sh" -n "$TMP/inpdir"
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+	
+	assert 'echo "$OUTPUT" | grep Subject' "Subject: This is a header"
+	assert 'echo "$OUTPUT" | grep -o "text attachment"' "text attachment"
+	BOUNDARY="$(cat "$(pwd)/notes/cur"/* | grep boundary= | cut -d '=' -f 2)"
+	#echo "boundary: $BOUNDARY"
+
+	OUTPUT="$(echo "$OUTPUT" | sed "s/$BOUNDARY/boundary/g")"
+	OUTPUT="$(echo "$OUTPUT" | grep -v "Date" | grep -v "X-Note-Id")"
+	
+	read -d '' -r EXPECTED <<- EOF || true
+		MIME-Version: 1.0
+		Content-Type: multipart/mixed; boundary=boundary
+		Subject: This is a header
+		
+		--boundary
+		Content-Type: text/plain; charset=utf-8
+		Content-Disposition: inline
+		
+		This is a body
+		--boundary
+		Content-Disposition: attachment; filename="file.txt"
+		Content-Type: text/plain
+		
+		This is a text attachment
+		--boundary--
+	EOF
+
+	assert 'echo "$OUTPUT"' "$EXPECTED"
+}
+
 testcase new_note_from_stdin
 testcase new_note_from_file
 testcase new_note_from_dir
@@ -212,6 +256,7 @@ testcase list_notes
 testcase export_note
 testcase edit_note
 testcase resume_editing
+testcase pack_multipart
 
 if [[ "$RESULT" == "0" ]]; then
 	echo "All tests passed."
