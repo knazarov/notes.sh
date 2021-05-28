@@ -31,14 +31,13 @@ set -e
 DATE_FORMAT="%a, %d %b %Y %H:%M:%S %z"
 PID=$$
 BASEDIR=~/Maildir/personal/Notes
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/notes.sh"
+EDITOR="${EDITOR:-vim}"
 
 if [ -n "$NOTES_SH_BASEDIR" ]; then
 	BASEDIR="$NOTES_SH_BASEDIR"
 fi
 
-if [ -z "$EDITOR" ]; then
-	EDITOR=vim
-fi
 
 if [ ! -d "$BASEDIR" ]; then
 	mkdir -p "$BASEDIR"/{tmp,new,cur}
@@ -79,6 +78,27 @@ uuid()
     done
 
     echo
+}
+
+yesno() {
+	PROMPT="$1"
+	DEFAULT="$2"
+
+	if [[ "$DEFAULT" == "y" ]]; then
+		read -p "$PROMPT [Y/n] " -r CHOICE
+		if [[ "$REPLY" =~ ^[Nn]$ ]]; then
+			echo "n"
+		else
+			echo "y"
+		fi
+	else
+		read -p "$PROMPT [y/N] " -r CHOICE
+		if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+			echo "y"
+		else
+			echo "n"
+		fi
+	fi
 }
 
 get_headers() {
@@ -297,9 +317,21 @@ edit_entry() {
 	ID="$1"
 	FILENAME="$(find_file_by_id "$ID")"
 
-	DIR=$(mktemp -d)
-    unpack_mime "$FILENAME" "$DIR"
-	"$EDITOR" "$DIR/note.md"
+	DIR="$CACHE_DIR/$ID"
+
+	if [ -d "$DIR" ] && [ -f "$DIR/note.md" ]; then
+		RESUME_EDITING=$(yesno "Unsaved changes found for this note. Resume editing?" y)		
+	fi
+
+	if [ "$RESUME_EDITING" != "y" ]; then
+		rm -rf "$DIR"
+		mkdir -p "$DIR"
+    	unpack_mime "$FILENAME" "$DIR"
+	fi
+
+	if ! "$EDITOR" "$DIR/note.md"; then
+		die "Editor returned non-zero exit code. Leaving the note untouched."	
+	fi
 
 	UNIX_TIMESTAMP=$(date "+%s")
 	HOSTNAME=$(hostname -s)
@@ -312,6 +344,7 @@ edit_entry() {
 		mv "$RESULT" "$BASEDIR/cur/$DEST_FILENAME"
 		rm "$FILENAME"
 	fi
+	rm -rf "$DIR"
 }
 
 list_entries() {
@@ -343,6 +376,14 @@ list_entries() {
 	"
 
     grep -m2 -r -h "^Subject:\|^X-Note-Id:" "$BASEDIR" | awk "$FILTER"
+}
+
+export_note() {
+	ID="$1"
+	FILENAME="$(find_file_by_id "$ID")"
+
+	DIR="$2"
+    unpack_mime "$FILENAME" "$DIR"
 }
 
 get_raw_graph() {
@@ -407,7 +448,7 @@ get_graph() {
 }
 
 usage() {
-  echo "$0 {--new,--list,--edit,--graph,--help}"
+  echo "$0 {--new,--list,--edit,--export,--graph,--help}"
 }
 
 while (( "$#" )); do
@@ -428,6 +469,14 @@ while (( "$#" )); do
       edit_entry "$2"
       exit 0
       ;;
+	-E|--export)
+      if [ -z "$2" ] || [ -z "$3" ]; then
+        echo "Misssing arguments for $1"
+        exit 1
+      fi
+	  export_note "$2" "$3"
+	  exit 0
+	  ;;
 	-g|--graph)
 	  get_graph
 	  exit 0

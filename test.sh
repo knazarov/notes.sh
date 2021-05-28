@@ -111,9 +111,107 @@ new_note_from_dir() {
 	assert 'echo "$OUTPUT" | grep Subject' "Subject: This is a header"
 }
 
+list_notes() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		# This is a body
+	EOF
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header2
+
+		# This is a body
+	EOF
+
+	OUTPUT="$("$BASE_DIR"/notes.sh -l)"
+
+	assert 'echo "$OUTPUT" | grep -o header1' 'header1'
+	assert 'echo "$OUTPUT" | grep -o header2' 'header2'
+}
+
+export_note() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		# This is a body
+	EOF
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+
+	mkdir out
+	"$BASE_DIR/notes.sh" -E "$NOTE_ID" out
+
+	assert 'cat out/note.md | grep Subject' "Subject: header1"
+}
+
+edit_note() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		line1
+	EOF
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+
+	cat > "$(pwd)/editor.sh" <<- EOF
+		#!/bin/bash
+		FILENAME="\$1"
+		echo "line2" >> "\$FILENAME"
+	EOF
+	chmod a+x "$(pwd)/editor.sh"
+	export EDITOR="$(pwd)/editor.sh"
+
+	"$BASE_DIR/notes.sh" -e "$NOTE_ID"
+
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+	assert 'echo "$OUTPUT" | grep -o line1' "line1"
+	assert 'echo "$OUTPUT" | grep -o line2' "line2"
+}
+
+resume_editing() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		myline1
+	EOF
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+
+	cat > "$(pwd)/editor.sh" <<- EOF
+		#!/bin/bash
+		FILENAME="\$1"
+		echo "myline2" >> "\$FILENAME"
+		exit 1
+	EOF
+	chmod a+x "$(pwd)/editor.sh"
+	export EDITOR="$(pwd)/editor.sh"
+
+	"$BASE_DIR/notes.sh" -e "$NOTE_ID" 2>/dev/null || true
+
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+	assert 'echo "$OUTPUT" | grep myline | wc -l' "1"
+
+	cat > "$(pwd)/editor.sh" <<- EOF
+		#!/bin/bash
+		FILENAME="\$1"
+		echo "myline3" >> "\$FILENAME"
+	EOF
+	chmod a+x "$(pwd)/editor.sh"
+	export EDITOR="$(pwd)/editor.sh"
+
+	echo "y" | "$BASE_DIR/notes.sh" -e "$NOTE_ID"
+
+
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+	assert 'echo "$OUTPUT" | grep -o myline1' "myline1"
+	assert 'echo "$OUTPUT" | grep -o myline2' "myline2"
+	assert 'echo "$OUTPUT" | grep -o myline3' "myline3"
+}
+
 testcase new_note_from_stdin
 testcase new_note_from_file
 testcase new_note_from_dir
+testcase list_notes
+testcase export_note
+testcase edit_note
+testcase resume_editing
 
 if [[ "$RESULT" == "0" ]]; then
 	echo "All tests passed."
