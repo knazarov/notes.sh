@@ -80,6 +80,10 @@ uuid()
     echo
 }
 
+utc_timestamp() {
+	date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
 gen_boundary()
 {
 	for (( N=0; N < 32; ++N ))
@@ -221,12 +225,12 @@ unpack_mime() {
 	FILE="$1"
 	DIR="$2"
 
-	DATE=$(get_header "$FILE" Date)
+	DATE=$(get_header "$FILE" X-Date)
 	SUBJECT=$(get_header "$FILE" Subject)
 	MIME_TYPE=$(get_header "$FILE" Content-Type)
 	NOTE_ID=$(get_header "$FILE" X-Note-Id)
 
-	echo "Date: $DATE" > "$DIR/note.md"
+	echo "X-Date: $DATE" > "$DIR/note.md"
 	if [ -n "$NOTE_ID" ]; then
 		echo "X-Note-Id: $NOTE_ID" >> "$DIR/note.md"
 	fi
@@ -261,10 +265,12 @@ pack_mime() {
 	DIR="$1"
 	FILE="$2"
 	FILE_COUNT="$(ls "$DIR" | wc -l)"
+	MIME_TIMESTAMP=$(LC_ALL="en_US.UTF-8" date "+$DATE_FORMAT")
 
 	if [[ "$FILE_COUNT" == "1" ]]; then
 		{
 			echo "MIME-Version: 1.0"
+			echo "Date: $MIME_TIMESTAMP"
 			echo "Content-Type: text/plain; charset=utf-8"
 			echo "Content-Disposition: inline"
 			cat "$DIR/note.md"
@@ -275,6 +281,7 @@ pack_mime() {
 	BOUNDARY="$(gen_boundary)"
 	{
 		echo "MIME-Version: 1.0"
+		echo "Date: $MIME_TIMESTAMP"
 		echo "Content-Type: multipart/mixed; boundary=$BOUNDARY"
 		get_headers "$DIR/note.md"
 		echo
@@ -302,9 +309,9 @@ new_entry() {
 	ENTRY_FILE="$DIR/note.md"
 	ENTRY_FILE_START="$(mktemp)"
 	MIME_TIMESTAMP=$(LC_ALL="en_US.UTF-8" date "+$DATE_FORMAT")
-
+	UTC_TIMESTAMP=$(utc_timestamp)
 	cat > "$ENTRY_FILE" <<- EOF
-		Date: $MIME_TIMESTAMP
+		X-Date: $UTC_TIMESTAMP
 		X-Note-Id: $(uuid)
 		Subject: 
 	EOF
