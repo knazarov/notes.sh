@@ -121,6 +121,7 @@ get_headers() {
 	FILTER="\
 		{ \
 		    if (\$0~/^$/) {exit} \
+		    if (\$0!~/^[^ ]*: .*$/) {exit} \
 		    print \$0 \
 		} \
 	"
@@ -132,8 +133,14 @@ get_body() {
 	
 	FILTER="\
 		{ \
-		    if (body==1) {print \$0}\
+		    if (body==1) {\
+				print \$0;
+			}\
 		    if (\$0~/^$/) {body=1} \
+		    if (\$0!~/^[^ ]*: .*$/ && body != 1) {\
+				body=1;
+				print \$0;
+			} \
 		} \
 	"
 	awk "$FILTER" "$BODY_FILE" 
@@ -323,13 +330,21 @@ new_entry() {
 	fi
 
 	if [ -f "$INP" ]; then
-		cp "$INP" "$DIR/note.md"
+		{
+			get_headers "$INP"
+			echo "" 
+			get_body "$INP"
+		} >> "$DIR/note.md"
 	elif [ -d "$INP" ]; then
 		if [ ! -f "$INP/note.md" ]; then
 			die "File doesn't exist: $INP/note.md"
 		fi
 		cp -n "$INP"/* "$DIR/" || true
-		cat "$INP/note.md" >> "$DIR/note.md"
+		{
+			get_headers "$INP/note.md"
+			echo "" 
+			get_body "$INP/note.md"
+		} >> "$DIR/note.md"
 	elif [ -t 0 ]; then
 		"$EDITOR" "$ENTRY_FILE"
 	else

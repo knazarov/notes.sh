@@ -292,6 +292,57 @@ pack_multipart_binary() {
 
 	assert 'echo "$OUTPUT"' "$EXPECTED"
 }
+
+existing_headers() {
+	mkdir "$TMP/inpdir"
+	NOTE_ID="6e50650a-88d1-49a3-92eb-0ec329e6f6f8"
+	DATE="2021-05-29T18:47:34Z"
+
+	cat > "$TMP/inpdir/note.md" <<- EOF
+		X-Note-Id: $NOTE_ID
+		X-Date: $DATE
+		X-Custom: value
+		Subject: This is a subject
+
+		# This is a body
+	EOF
+
+	"$BASE_DIR/notes.sh" -n "$TMP/inpdir"
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+	
+	assert 'echo "$OUTPUT" | grep Subject' "Subject: This is a subject"
+
+	assert 'echo "$OUTPUT" | grep X-Note-Id' "X-Note-Id: $NOTE_ID"
+	assert 'echo "$OUTPUT" | grep X-Date' "X-Date: $DATE"
+	assert 'echo "$OUTPUT" | grep X-Custom' "X-Custom: value"
+}
+
+no_headers() {
+	cat > "$TMP/input.md" <<- EOF
+		This is a body
+	EOF
+
+	"$BASE_DIR/notes.sh" -n "$TMP/input.md"
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+
+	assert 'echo "$OUTPUT" | grep Subject' "Subject: "
+	assert 'echo "$OUTPUT" | grep "This is a body"' "This is a body"
+}
+
+no_headers_dir() {
+	mkdir "$TMP/inpdir"
+
+	cat > "$TMP/inpdir/note.md" <<- EOF
+		This is a body
+	EOF
+
+	"$BASE_DIR/notes.sh" -n "$TMP/inpdir"
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+
+	assert 'echo "$OUTPUT" | grep Subject' "Subject: "
+	assert 'echo "$OUTPUT" | grep "This is a body"' "This is a body"
+}
+
 testcase new_note_from_stdin
 testcase new_note_from_file
 testcase new_note_from_dir
@@ -301,6 +352,9 @@ testcase edit_note
 testcase resume_editing
 testcase pack_multipart
 testcase pack_multipart_binary
+testcase existing_headers
+testcase no_headers
+testcase no_headers_dir
 
 if [[ "$RESULT" == "0" ]]; then
 	echo "All tests passed."
