@@ -100,14 +100,14 @@ yesno() {
 
 	if [[ "$DEFAULT" == "y" ]]; then
 		read -p "$PROMPT [Y/n] " -r CHOICE
-		if [[ "$REPLY" =~ ^[Nn]$ ]]; then
+		if [[ "$CHOICE" =~ ^[Nn]$ ]]; then
 			echo "n"
 		else
 			echo "y"
 		fi
 	else
 		read -p "$PROMPT [y/N] " -r CHOICE
-		if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+		if [[ "$CHOICE" =~ ^[Yy]$ ]]; then
 			echo "y"
 		else
 			echo "n"
@@ -257,14 +257,14 @@ pack_part() {
 		echo "Content-Type: $CONTENT_TYPE"
 		echo "Content-Transfer-Encoding: base64"
 		echo
-		cat "$PART_FILE" | base64
+		base64 < "$PART_FILE"
 	fi
 }
 
 pack_mime() {
 	DIR="$1"
 	FILE="$2"
-	FILE_COUNT="$(ls "$DIR" | wc -l)"
+	FILE_COUNT="$(find "$DIR/" -type f | wc -l)"
 	MIME_TIMESTAMP=$(LC_ALL="en_US.UTF-8" date "+$DATE_FORMAT")
 
 	if [[ "$FILE_COUNT" == "1" ]]; then
@@ -293,7 +293,7 @@ pack_mime() {
 	} >> "$FILE"
 
 
-	find "$DIR/" -type f ! -name 'note.md' | while read FN
+	find "$DIR/" -type f ! -name 'note.md' | while read -r FN
 	do
 		{
 			echo "--$BOUNDARY"
@@ -339,9 +339,7 @@ new_entry() {
 	fi
 	MERGED_ENTRY_FILE="$(mktemp)"
 
-	HEADERS=$( echo "$(
-		get_headers "$ENTRY_FILE"
-		)" | tac | sort -u -k1,1)
+	HEADERS=$(get_headers "$ENTRY_FILE" | tac | sort -u -k1,1)
 
 	{
 		echo "$HEADERS"
