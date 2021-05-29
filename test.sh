@@ -249,6 +249,49 @@ pack_multipart() {
 	assert 'echo "$OUTPUT"' "$EXPECTED"
 }
 
+pack_multipart_binary() {
+	mkdir "$TMP/inpdir"
+	cat > "$TMP/inpdir/note.md" <<- EOF
+		Subject: This is a header
+
+		This is a body
+	EOF
+
+	echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" | base64 --decode > "$TMP/inpdir/file.png"
+
+	"$BASE_DIR/notes.sh" -n "$TMP/inpdir"
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+	
+	assert 'echo "$OUTPUT" | grep Subject' "Subject: This is a header"
+
+	BOUNDARY="$(cat "$(pwd)/notes/cur"/* | grep boundary= | cut -d '=' -f 2)"
+	#echo "boundary: $BOUNDARY"
+
+	OUTPUT="$(echo "$OUTPUT" | sed "s/$BOUNDARY/boundary/g")"
+	OUTPUT="$(echo "$OUTPUT" | grep -v "Date" | grep -v "X-Note-Id")"
+	
+	read -d '' -r EXPECTED <<- EOF || true
+		MIME-Version: 1.0
+		Content-Type: multipart/mixed; boundary=boundary
+		Subject: This is a header
+		
+		--boundary
+		Content-Type: text/plain; charset=utf-8
+		Content-Disposition: inline
+		
+		This is a body
+		--boundary
+		Content-Disposition: attachment; filename="file.png"
+		Content-Type: image/png
+		Content-Transfer-Encoding: base64
+
+		iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6
+		kgAAAABJRU5ErkJggg==
+		--boundary--
+	EOF
+
+	assert 'echo "$OUTPUT"' "$EXPECTED"
+}
 testcase new_note_from_stdin
 testcase new_note_from_file
 testcase new_note_from_dir
@@ -257,6 +300,7 @@ testcase export_note
 testcase edit_note
 testcase resume_editing
 testcase pack_multipart
+testcase pack_multipart_binary
 
 if [[ "$RESULT" == "0" ]]; then
 	echo "All tests passed."
