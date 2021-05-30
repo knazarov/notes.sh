@@ -222,7 +222,7 @@ pack_multipart() {
 	
 	assert 'echo "$OUTPUT" | grep Subject' "Subject: This is a header"
 	assert 'echo "$OUTPUT" | grep -o "text attachment"' "text attachment"
-	BOUNDARY="$(cat "$(pwd)/notes/cur"/* | grep boundary= | cut -d '=' -f 2)"
+	BOUNDARY="$(cat "$(pwd)/notes/cur"/* | grep boundary= | cut -d '=' -f 2 | tr -d '\"')"
 	#echo "boundary: $BOUNDARY"
 
 	OUTPUT="$(echo "$OUTPUT" | sed "s/$BOUNDARY/boundary/g")"
@@ -230,7 +230,7 @@ pack_multipart() {
 	
 	read -d '' -r EXPECTED <<- EOF || true
 		MIME-Version: 1.0
-		Content-Type: multipart/mixed; boundary=boundary
+		Content-Type: multipart/mixed; boundary="boundary"
 		Subject: This is a header
 		
 		--boundary
@@ -264,7 +264,7 @@ pack_multipart_binary() {
 	
 	assert 'echo "$OUTPUT" | grep Subject' "Subject: This is a header"
 
-	BOUNDARY="$(cat "$(pwd)/notes/cur"/* | grep boundary= | cut -d '=' -f 2)"
+	BOUNDARY="$(cat "$(pwd)/notes/cur"/* | grep boundary= | cut -d '=' -f 2 | tr -d '\"')"
 	#echo "boundary: $BOUNDARY"
 
 	OUTPUT="$(echo "$OUTPUT" | sed "s/$BOUNDARY/boundary/g")"
@@ -272,7 +272,7 @@ pack_multipart_binary() {
 	
 	read -d '' -r EXPECTED <<- EOF || true
 		MIME-Version: 1.0
-		Content-Type: multipart/mixed; boundary=boundary
+		Content-Type: multipart/mixed; boundary="boundary"
 		Subject: This is a header
 		
 		--boundary
@@ -343,6 +343,33 @@ no_headers_dir() {
 	assert 'echo "$OUTPUT" | grep "This is a body"' "This is a body"
 }
 
+import_export() {
+	mkdir "$TMP/inpdir"
+	NOTE_ID="6e50650a-88d1-49a3-92eb-0ec329e6f6f8"
+	DATE="2021-05-29T18:47:34Z"
+
+	cat > "$TMP/inpdir/note.md" <<- EOF
+		X-Date: $DATE
+		X-Note-Id: $NOTE_ID
+		Subject: This is a subject
+
+		This is a body
+	EOF
+
+	cat > "$TMP/inpdir/file.txt" <<- EOF
+		This is a text attachment
+	EOF
+
+	"$BASE_DIR/notes.sh" -n "$TMP/inpdir"
+
+	mkdir "$TMP/outpdir"
+
+	"$BASE_DIR/notes.sh" -E $NOTE_ID "$TMP/outpdir"
+
+	assert 'cat "$TMP/outpdir/note.md"' "$(cat "$TMP/inpdir/note.md")"
+	assert 'cat "$TMP/outpdir/file.txt"' "$(cat "$TMP/inpdir/file.txt")"
+}
+
 testcase new_note_from_stdin
 testcase new_note_from_file
 testcase new_note_from_dir
@@ -355,6 +382,7 @@ testcase pack_multipart_binary
 testcase existing_headers
 testcase no_headers
 testcase no_headers_dir
+testcase import_export
 
 if [[ "$RESULT" == "0" ]]; then
 	echo "All tests passed."

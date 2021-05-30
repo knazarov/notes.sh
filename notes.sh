@@ -184,7 +184,7 @@ unpack_part() {
 	if [[ $DISPOSITION == *"attachment"* ]]; then
 		ENCODING=$(get_header "$FILE" Content-Transfer-Encoding)
 		FILENAME=$(echo "$DISPOSITION" | \
-			sed -n 's/^.*filename="\{0,1\}\(.*\)"\{0,1\}$/\1/p')
+			sed -n 's/^.*filename="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p')
 		FILTER="\
 			{ \
 			    if (body==1) {print \$0}\
@@ -289,7 +289,7 @@ pack_mime() {
 	{
 		echo "MIME-Version: 1.0"
 		echo "Date: $MIME_TIMESTAMP"
-		echo "Content-Type: multipart/mixed; boundary=$BOUNDARY"
+		echo "Content-Type: multipart/mixed; boundary=\"$BOUNDARY\""
 		get_headers "$DIR/note.md"
 		echo
 		echo "--$BOUNDARY"
@@ -346,7 +346,10 @@ new_entry() {
 			get_body "$INP/note.md"
 		} >> "$DIR/note.md"
 	elif [ -t 0 ]; then
+		OLD_DIR="$(pwd)"
+		cd "$DIR"
 		"$EDITOR" "$ENTRY_FILE"
+		cd "$OLD_DIR"
 	else
 		while read -r line ; do
 			echo "$line" >> "$ENTRY_FILE"
@@ -403,9 +406,12 @@ edit_entry() {
     	unpack_mime "$FILENAME" "$DIR"
 	fi
 
+	OLD_DIR="$(pwd)"
+	cd "$DIR"
 	if ! "$EDITOR" "$DIR/note.md"; then
 		die "Editor returned non-zero exit code. Leaving the note untouched."	
 	fi
+	cd "$OLD_DIR"
 
 	UNIX_TIMESTAMP=$(date "+%s")
 	HOSTNAME=$(hostname -s)
