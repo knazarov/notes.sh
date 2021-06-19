@@ -253,11 +253,6 @@ unpack_mime() {
 	FILE="$1"
 	DIR="$2"
 
-	DATE=$(get_header "$FILE" X-Date)
-	SUBJECT=$(get_header "$FILE" Subject)
-	MIME_TYPE=$(get_header "$FILE" Content-Type)
-	NOTE_ID=$(get_header "$FILE" X-Note-Id)
-
 	get_headers "$FILE" | grep -v "^Content-Type\|^Content-Disposition\|^Date\|^MIME-Version" >> "$DIR/note.md"
 	echo "" >> "$DIR/note.md"
 
@@ -369,7 +364,6 @@ input_note() {
 	MERGED_ENTRY_FILE="$(mktemp)"
 
 	HEADERS=$(get_headers "$ENTRY_FILE")
-	BODY="$(get_body "$ENTRY_FILE")"
 	{
 		echo "$HEADERS" | grep -q "^X-Date:" || echo "X-Date: $UTC_TIMESTAMP"
 		echo "$HEADERS" | grep -q "^X-Note-Id:" || echo "X-Note-Id: $(uuid)"
@@ -408,19 +402,19 @@ notes_equal() {
 	FILTER1="^Date:"
 	FILTER2="^Date:"
 
-	if [ ! -z "$BOUNDARY1" ]; then
+	if [ -n "$BOUNDARY1" ]; then
 		FILTER1="^Date:\|$BOUNDARY1"
 	fi
 
-	if [ ! -z "$BOUNDARY2" ]; then
+	if [ -n "$BOUNDARY2" ]; then
 		FILTER2="^Date:\|$BOUNDARY2"
 	fi
 
 	NOTE1_S="$(mktemp)"
 
-	cat "$NOTE1" | grep -v "$FILTER1" > "$NOTE1_S"
+	grep -v "$FILTER1" "$NOTE1" > "$NOTE1_S"
 
-	if cat "$NOTE2" | grep -v "$FILTER2" | cmp -s "$NOTE1_S"; then
+	if grep -v "$FILTER2" "$NOTE2" | cmp -s "$NOTE1_S"; then
 		rm "$NOTE1_S"
 		return 0
 	else
@@ -441,7 +435,7 @@ new_entry() {
 	NOTE_ID="$(get_header "$OUTP" X-Note-Id)"
 
 	OLD_NOTE="$(find_file_by_id "$NOTE_ID")"
-	if [ ! -z "$OLD_NOTE" ] && notes_equal "$OLD_NOTE" "$OUTP"; then
+	if [ -n "$OLD_NOTE" ] && notes_equal "$OLD_NOTE" "$OUTP"; then
 		return
 	fi
 
