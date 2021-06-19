@@ -490,30 +490,42 @@ list_entries() {
 		BEGIN { \
 			message_id=0; \
 			subject=0; \
+			date=0; \
 		} \
 		match(\$0, /^X-Note-Id: .*$/) { \
 				if (message_id != 0) { \
-					if (subject !=0)\
-						print message_id, subject; \
-					subject = 0 \
+					if (subject !=0 && date != 0)\
+						print date, message_id, subject; \
+					subject = 0; \
+					date = 0; \
 				};\
-				message_id = substr(\$0, 12, RLENGTH-11) \
+				message_id = substr(\$0, 12, RLENGTH-11); \
 		} \
 		match(\$0, /^Subject: .*$/) { \
 				if (subject != 0) { \
-					if (message_id != 0)\
-						print message_id, subject; \
-					message_id = 0 \
+					if (message_id != 0 && date != 0)\
+						print date, message_id, subject; \
+					message_id = 0; \
+					date = 0; \
 				}; \
-				subject = substr(\$0, 10, RLENGTH-9) \
+				subject = substr(\$0, 10, RLENGTH-9); \
+		} \
+		match(\$0, /^X-Date: .*$/) { \
+				if (date != 0) { \
+					if (message_id != 0 && subject != 0)\
+						print date, message_id, subject; \
+					subject = 0; \
+					message_id = 0; \
+				}; \
+				date = substr(\$0, 9, RLENGTH-8); \
 		} \
 		END { \
-			if (message_id != 0 && subject != 0)\
-				print message_id, subject;\
+			if (message_id != 0 && subject != 0 && date != 0)\
+				print date, message_id, subject;\
 		}\
 	"
 
-    grep -m2 -r -h "^Subject:\|^X-Note-Id:" "$BASEDIR" | awk "$FILTER"
+    grep -m3 -r -h "^Subject:\|^X-Note-Id:\|^X-Date:" "$BASEDIR" | awk "$FILTER" | sort | cut -d " " -f "2-"
 }
 
 export_note() {

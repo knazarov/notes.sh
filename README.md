@@ -40,7 +40,7 @@ To list all existing notes with their titles:
 To select a note with fuzzy search and edit it:
 
 ```sh
-./notes.sh -l | fzf --with-nth="2..-1" | xargs -o ./notes.sh -e
+./notes.sh -l | fzf --tac --with-nth="2..-1" | xargs -o ./notes.sh -e
 ```
 
 ## License
