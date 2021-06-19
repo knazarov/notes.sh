@@ -30,9 +30,13 @@ BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 export BASE_DIR
 cd "$BASE_DIR"
 
+TESTNAME="$1"
 RESULT=0
 
 testcase() {
+	if [ ! -z "$TESTNAME" ] && [[ "$TESTNAME" != "$1" ]]; then
+		return
+	fi
 	TMP=$(mktemp -d)
 	cd "$TMP"
 	NOTES_SH_BASEDIR="$(pwd)/notes"
@@ -166,6 +170,47 @@ edit_note() {
 	assert 'echo "$OUTPUT" | grep -o line2' "line2"
 }
 
+edit_note_add_file() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		line1
+	EOF
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+
+	cat > "$(pwd)/editor.sh" <<- EOF
+		#!/bin/bash
+		FILENAME="\$1"
+		echo "newfile" > "\$FILENAME.txt"
+	EOF
+	chmod a+x "$(pwd)/editor.sh"
+	export EDITOR="$(pwd)/editor.sh"
+
+	"$BASE_DIR/notes.sh" -e "$NOTE_ID"
+
+	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
+	assert 'echo "$OUTPUT" | grep -o line1' "line1"
+	assert 'echo "$OUTPUT" | grep -o newfile' "newfile"
+}
+
+edit_note_no_modifications() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		line1
+	EOF
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+	NOTE_FILE="$(ls "$(pwd)/notes/cur"/*)"
+
+	cat > "$(pwd)/editor.sh" <<- EOF
+		#!/bin/bash
+	EOF
+	chmod a+x "$(pwd)/editor.sh"
+	export EDITOR="$(pwd)/editor.sh"
+
+	"$BASE_DIR/notes.sh" -e "$NOTE_ID"
+	assert 'ls "$(pwd)/notes/cur"/*' "$NOTE_FILE"
+}
 resume_editing() {
 	"$BASE_DIR/notes.sh" -n <<- EOF
 		Subject: header1
@@ -370,12 +415,54 @@ import_export() {
 	assert 'cat "$TMP/outpdir/file.txt"' "$(cat "$TMP/inpdir/file.txt")"
 }
 
+new_note_overwrite_without_modifications() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+		X-Date: 2021-05-30T18:25:38Z
+
+		line1
+	EOF
+
+	NOTE_FILE="$(ls "$(pwd)/notes/cur"/*)"
+	mv "$NOTE_FILE" "$NOTE_FILE.keep"
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+
+	mkdir "$TMP/outdir"
+	"$BASE_DIR/notes.sh" -E "$NOTE_ID" "$TMP/outdir"
+
+	"$BASE_DIR/notes.sh" -n "$TMP/outdir"
+
+	assert 'ls "$(pwd)/notes/cur"/*' "$NOTE_FILE.keep"
+}
+
+new_note_overwrite_with_modifications() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		line1
+	EOF
+
+	NOTE_FILE="$(ls "$(pwd)/notes/cur"/*)"
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+
+	mkdir "$TMP/outdir"
+	"$BASE_DIR/notes.sh" -E "$NOTE_ID" "$TMP/outdir"
+
+	echo "line2" >> "$TMP/outdir/note.md"
+
+	"$BASE_DIR/notes.sh" -n "$TMP/outdir"
+
+	assert 'cat "$(pwd)/notes/cur"/* | grep line2' "line2"
+}
+
 testcase new_note_from_stdin
 testcase new_note_from_file
 testcase new_note_from_dir
 testcase list_notes
 testcase export_note
 testcase edit_note
+testcase edit_note_add_file
+testcase edit_note_no_modifications
 testcase resume_editing
 testcase pack_multipart
 testcase pack_multipart_binary
@@ -383,6 +470,8 @@ testcase existing_headers
 testcase no_headers
 testcase no_headers_dir
 testcase import_export
+testcase new_note_overwrite_without_modifications
+testcase new_note_overwrite_with_modifications
 
 if [[ "$RESULT" == "0" ]]; then
 	echo "All tests passed."

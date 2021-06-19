@@ -151,6 +151,27 @@ get_header() {
 	grep -m1 "^${HEADER}: " < "$FILE" | sed -n "s/^${HEADER}: \(.*\)$/\1/p"
 }
 
+find_file_by_id() {
+	ID="$1"
+
+	{ grep -l -r -m1 "^X-Note-Id: $ID$" "$BASEDIR" || true; } | sort| head -1
+}
+
+assert_find_file_by_id() {
+	FILE="$(find_file_by_id "$1")"
+
+	if [ ! -f "$FILE" ]; then
+		die "Note with ID <$ID> not found"
+	fi
+
+	echo "$FILE"
+}
+
+find_files_by_id() {
+	ID="$1"
+	grep -l -r -m 1 "^X-Note-Id: $ID$" "$BASEDIR" || true
+}
+
 get_part() {
 	FILE="$1"
 	BOUNDARY="$2"
@@ -237,11 +258,7 @@ unpack_mime() {
 	MIME_TYPE=$(get_header "$FILE" Content-Type)
 	NOTE_ID=$(get_header "$FILE" X-Note-Id)
 
-	echo "X-Date: $DATE" > "$DIR/note.md"
-	if [ -n "$NOTE_ID" ]; then
-		echo "X-Note-Id: $NOTE_ID" >> "$DIR/note.md"
-	fi
-	echo "Subject: $SUBJECT" >> "$DIR/note.md"
+	get_headers "$FILE" | grep -v "^Content-Type\|^Content-Disposition\|^Date\|^MIME-Version" >> "$DIR/note.md"
 	echo "" >> "$DIR/note.md"
 
 	TMP=$(mktemp --tmpdir="$DIR")
@@ -290,7 +307,7 @@ pack_mime() {
 		echo "MIME-Version: 1.0"
 		echo "Date: $MIME_TIMESTAMP"
 		echo "Content-Type: multipart/mixed; boundary=\"$BOUNDARY\""
-		get_headers "$DIR/note.md"
+		get_headers "$DIR/note.md" 
 		echo
 		echo "--$BOUNDARY"
 		echo "Content-Type: text/plain; charset=utf-8"
@@ -310,20 +327,14 @@ pack_mime() {
 	echo "--$BOUNDARY--" >> "$FILE"
 }
 
-new_entry() {
+input_note() {
 	INP="$1"
-	DIR=$(mktemp -d)
+	OUTP="$2"
+
+	DIR="$(mktemp -d)"
 	ENTRY_FILE="$DIR/note.md"
-	ENTRY_FILE_START="$(mktemp)"
 	MIME_TIMESTAMP=$(LC_ALL="en_US.UTF-8" date "+$DATE_FORMAT")
 	UTC_TIMESTAMP=$(utc_timestamp)
-	cat > "$ENTRY_FILE" <<- EOF
-		X-Date: $UTC_TIMESTAMP
-		X-Note-Id: $(uuid)
-		Subject: 
-	EOF
-
-	cp "$ENTRY_FILE" "$ENTRY_FILE_START"
 
 	if [ -n "$INP" ] && [ ! -f "$INP" ] && [ ! -d "$INP" ]; then
 		die "File or directory doesn't exist: $INP"
@@ -340,12 +351,12 @@ new_entry() {
 			die "File doesn't exist: $INP/note.md"
 		fi
 		cp -n "$INP"/* "$DIR/" || true
-		{
-			get_headers "$INP/note.md"
-			echo "" 
-			get_body "$INP/note.md"
-		} >> "$DIR/note.md"
 	elif [ -t 0 ]; then
+		cat > "$ENTRY_FILE" <<- EOF
+			X-Date: $UTC_TIMESTAMP
+			X-Note-Id: $(uuid)
+			Subject: 
+		EOF
 		OLD_DIR="$(pwd)"
 		cd "$DIR"
 		"$EDITOR" "$ENTRY_FILE"
@@ -357,42 +368,95 @@ new_entry() {
 	fi
 	MERGED_ENTRY_FILE="$(mktemp)"
 
-	HEADERS=$(get_headers "$ENTRY_FILE" | tac | sort -u -k1,1)
-
+	HEADERS=$(get_headers "$ENTRY_FILE")
+	BODY="$(get_body "$ENTRY_FILE")"
 	{
+		echo "$HEADERS" | grep -q "^X-Date:" || echo "X-Date: $UTC_TIMESTAMP"
+		echo "$HEADERS" | grep -q "^X-Note-Id:" || echo "X-Note-Id: $(uuid)"
 		echo "$HEADERS"
+		echo "$HEADERS" | grep -q "^Subject:" || echo "Subject: "
 		echo ""
 		get_body "$ENTRY_FILE"
 	} > "$MERGED_ENTRY_FILE"
 
+
 	mv "$MERGED_ENTRY_FILE" "$ENTRY_FILE"
 
-	if  ! cmp -s "$ENTRY_FILE" "$ENTRY_FILE_START" ; then
-		UNIX_TIMESTAMP=$(date "+%s")
-		HOSTNAME=$(hostname -s)
+	pack_mime "$DIR" "$OUTP"
 
-		RESULT=$(mktemp)
-		pack_mime "$DIR" "$RESULT"
-		FILENAME="$UNIX_TIMESTAMP.${PID}_1.${HOSTNAME}:2,S"
-		mv "$RESULT" "$BASEDIR/cur/$FILENAME"
-	fi
+	rm -rf "$DIR"
 }
 
-find_file_by_id() {
+remove_notes_by_id() {
 	ID="$1"
 
-	FILE="$( { grep -l -r "^X-Note-Id: $ID$" "$BASEDIR" || true; } | head -1)"
+	find_files_by_id "$ID" | while read -r FN
+	do
+		rm "$FN"
+	done	
+}
 
-	if [ ! -f "$FILE" ]; then
-		die "Note with ID <$ID> not found"
+notes_equal() {
+	NOTE1="$1"
+	NOTE2="$2"
+
+	MIME_TYPE1=$(get_header "$NOTE1" Content-Type)
+	MIME_TYPE2=$(get_header "$NOTE2" Content-Type)
+	BOUNDARY1=$(echo "$MIME_TYPE1" | sed -n 's/^.*boundary="\(.*\)"$/\1/p')
+	BOUNDARY2=$(echo "$MIME_TYPE2" | sed -n 's/^.*boundary="\(.*\)"$/\1/p')
+
+	FILTER1="^Date:"
+	FILTER2="^Date:"
+
+	if [ ! -z "$BOUNDARY1" ]; then
+		FILTER1="^Date:\|$BOUNDARY1"
 	fi
 
-	echo "$FILE"
+	if [ ! -z "$BOUNDARY2" ]; then
+		FILTER2="^Date:\|$BOUNDARY2"
+	fi
+
+	NOTE1_S="$(mktemp)"
+
+	cat "$NOTE1" | grep -v "$FILTER1" > "$NOTE1_S"
+
+	if cat "$NOTE2" | grep -v "$FILTER2" | cmp -s "$NOTE1_S"; then
+		rm "$NOTE1_S"
+		return 0
+	else
+		rm "$NOTE1_S"
+		return 1
+	fi
 }
+
+new_entry() {
+	OUTP="$(mktemp)"
+	input_note "$1" "$OUTP"
+
+	if [ ! -s "$OUTP" ]; then
+		rm "$OUTP"
+		return
+	fi
+
+	NOTE_ID="$(get_header "$OUTP" X-Note-Id)"
+
+	OLD_NOTE="$(find_file_by_id "$NOTE_ID")"
+	if [ ! -z "$OLD_NOTE" ] && notes_equal "$OLD_NOTE" "$OUTP"; then
+		return
+	fi
+
+	remove_notes_by_id "$NOTE_ID"
+
+	UNIX_TIMESTAMP=$(date "+%s")
+	HOSTNAME=$(hostname -s)
+	FILENAME="$UNIX_TIMESTAMP.${PID}_1.${HOSTNAME}:2,S"
+	mv "$OUTP" "$BASEDIR/cur/$FILENAME"
+}
+
 
 edit_entry() {
 	ID="$1"
-	FILENAME="$(find_file_by_id "$ID")"
+	FILENAME="$(assert_find_file_by_id "$ID")"
 
 	DIR="$CACHE_DIR/$ID"
 
@@ -419,7 +483,7 @@ edit_entry() {
 	RESULT=$(mktemp)
 	pack_mime "$DIR" "$RESULT"
 
-	if ! cmp -s "$RESULT" "$FILENAME"; then
+	if ! notes_equal "$RESULT" "$FILENAME"; then
 		DEST_FILENAME="$UNIX_TIMESTAMP.${PID}_1.${HOSTNAME}:2,S"
 		mv "$RESULT" "$BASEDIR/cur/$DEST_FILENAME"
 		rm "$FILENAME"
@@ -460,7 +524,7 @@ list_entries() {
 
 export_note() {
 	ID="$1"
-	FILENAME="$(find_file_by_id "$ID")"
+	FILENAME="$(assert_find_file_by_id "$ID")"
 
 	DIR="$2"
     unpack_mime "$FILENAME" "$DIR"
