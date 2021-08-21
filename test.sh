@@ -231,7 +231,7 @@ resume_editing() {
 	"$BASE_DIR/notes.sh" -e "$NOTE_ID" 2>/dev/null || true
 
 	OUTPUT="$(cat "$(pwd)/notes/cur"/*)"
-	assert 'echo "$OUTPUT" | grep myline | wc -l' "1"
+	assert 'echo "$OUTPUT" | grep myline | wc -l | tr -d " "' "1"
 
 	cat > "$(pwd)/editor.sh" <<- EOF
 		#!/bin/bash

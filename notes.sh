@@ -230,7 +230,7 @@ unpack_part() {
 		BOUNDARY=$(echo "$MIME_TYPE" | sed -n 's/^.*boundary="\(.*\)"$/\1/p')
 		i=1
 		while true; do
-		    TMP=$(mktemp --tmpdir="$DIR")
+		    TMP=$(mktemp "$DIR/tmp.XXXXXXXX")
 		    get_part "$FILE" "$BOUNDARY" "$i" > "$TMP"
 			((i++))
 			if [ ! -s "$TMP" ]; then
@@ -256,7 +256,7 @@ unpack_mime() {
 	get_headers "$FILE" | grep -v "^Content-Type\|^Content-Disposition\|^Date\|^MIME-Version" >> "$DIR/note.md"
 	echo "" >> "$DIR/note.md"
 
-	TMP=$(mktemp --tmpdir="$DIR")
+	TMP=$(mktemp "$DIR/tmp.XXXXXXXX")
 	cat "$FILE" > "$TMP"
 
 	(unpack_part "$TMP" "$DIR")
