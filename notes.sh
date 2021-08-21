@@ -276,14 +276,14 @@ pack_part() {
 		echo "Content-Type: $CONTENT_TYPE"
 		echo "Content-Transfer-Encoding: base64"
 		echo
-		base64 < "$PART_FILE"
+		base64 | fold -w 76  < "$PART_FILE"
 	fi
 }
 
 pack_mime() {
 	DIR="$1"
 	FILE="$2"
-	FILE_COUNT="$(find "$DIR/" -type f | wc -l)"
+	FILE_COUNT="$(find "$DIR/" -type f | wc -l | tr -d " ")"
 	MIME_TIMESTAMP=$(LC_ALL="en_US.UTF-8" date "+$DATE_FORMAT")
 
 	if [[ "$FILE_COUNT" == "1" ]]; then
@@ -525,7 +525,7 @@ list_entries() {
 		}\
 	"
 
-    grep -m3 -r -h "^Subject:\|^X-Note-Id:\|^X-Date:" "$BASEDIR" | awk "$FILTER" | sort | cut -d " " -f "2-"
+    grep -r -h "^Subject:\|^X-Note-Id:\|^X-Date:" "$BASEDIR" | awk "$FILTER" | sort | cut -d " " -f "2-"
 }
 
 export_note() {
