@@ -28,13 +28,13 @@ By default, `notes.sh` will create new entries in `~/Maildir/personal/Notes`, wh
 To create a new note (will open a new editor window):
 
 ```sh
-./note.sh -n 
+./notes.sh -n 
 ```
 
 To list all existing notes with their titles:
 
 ```sh
-./note.sh -l
+./notes.sh -l
 ```
 
 To select a note with fuzzy search and edit it:
