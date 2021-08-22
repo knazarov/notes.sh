@@ -533,7 +533,15 @@ export_note() {
 	FILENAME="$(assert_find_file_by_id "$ID")"
 
 	DIR="$2"
-    unpack_mime "$FILENAME" "$DIR"
+	if [ -z "$DIR" ]; then
+		DIR="$(mktemp -d)"
+		unpack_mime "$FILENAME" "$DIR"
+
+		cat "$DIR/note.md"
+		rm -rf "$DIR"
+	else
+    	unpack_mime "$FILENAME" "$DIR"
+	fi
 }
 
 get_raw_graph() {
@@ -620,7 +628,7 @@ while (( "$#" )); do
       exit 0
       ;;
 	-E|--export)
-      if [ -z "$2" ] || [ -z "$3" ]; then
+      if [ -z "$2" ]; then
         echo "Misssing arguments for $1"
         exit 1
       fi

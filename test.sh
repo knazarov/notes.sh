@@ -147,6 +147,19 @@ export_note() {
 	assert 'cat out/note.md | grep Subject' "Subject: header1"
 }
 
+export_note_stdout() {
+	"$BASE_DIR/notes.sh" -n <<- EOF
+		Subject: header1
+
+		# This is a body
+	EOF
+	NOTE_ID="$(cat "$(pwd)/notes/cur"/* | grep X-Note-Id | cut -d ' ' -f 2)"
+
+	MD="$("$BASE_DIR/notes.sh" -E "$NOTE_ID")"
+
+	assert 'echo "$MD" | grep Subject' "Subject: header1"
+}
+
 edit_note() {
 	"$BASE_DIR/notes.sh" -n <<- EOF
 		Subject: header1
@@ -460,6 +473,7 @@ testcase new_note_from_file
 testcase new_note_from_dir
 testcase list_notes
 testcase export_note
+testcase export_note_stdout
 testcase edit_note
 testcase edit_note_add_file
 testcase edit_note_no_modifications
